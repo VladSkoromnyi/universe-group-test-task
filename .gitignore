@@ -14,10 +14,14 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# Env
+# Env — commit ONLY templates (*.example). Never commit real env files.
 .env
 .env.local
 .env.*.local
+.env.development
+.env.stage
+.env.production
+.env.test
 
 # Build
 dist/
