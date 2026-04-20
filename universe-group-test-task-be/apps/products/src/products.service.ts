@@ -3,11 +3,10 @@ import { ClientProxy } from '@nestjs/microservices';
 import { eq, desc, count } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { firstValueFrom } from 'rxjs';
-import { DRIZZLE } from '../../../libs/database/src/database.module';
-import { products } from '../../../libs/database/src/schema';
-import { RABBITMQ_CLIENT, PRODUCT_EVENTS } from '../../../libs/rabbitmq/src';
+import { DRIZZLE, products } from '@libs/database';
+import * as schema from '@libs/database/schema';
+import { RABBITMQ_CLIENT, PRODUCT_EVENTS } from '@libs/rabbitmq';
 import { CreateProductDto, PaginationDto } from './dto/product.dto';
-import * as schema from '../../../libs/database/src/schema';
 
 @Injectable()
 export class ProductsService {
