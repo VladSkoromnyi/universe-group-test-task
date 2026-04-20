@@ -14,6 +14,25 @@ for (const file of [
   loadEnv({ path: file, override: false });
 }
 
+const WAIT_MAX_ATTEMPTS = 15;
+const WAIT_DELAY_MS = 1000;
+
+async function waitForDatabase(pool: Pool): Promise<void> {
+  for (let attempt = 1; attempt <= WAIT_MAX_ATTEMPTS; attempt++) {
+    try {
+      await pool.query('SELECT 1');
+      return;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (attempt === WAIT_MAX_ATTEMPTS) {
+        throw new Error(`Database not reachable after ${WAIT_MAX_ATTEMPTS} attempts: ${msg}`);
+      }
+      console.log(`[migrate] waiting for database (attempt ${attempt}/${WAIT_MAX_ATTEMPTS})...`);
+      await new Promise((r) => setTimeout(r, WAIT_DELAY_MS));
+    }
+  }
+}
+
 async function main() {
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) {
@@ -24,8 +43,10 @@ async function main() {
   console.log(`[migrate] target: ${databaseUrl.replace(/:[^:@]+@/, ':***@')}`);
 
   const pool = new Pool({ connectionString: databaseUrl });
-  const db = drizzle(pool);
 
+  await waitForDatabase(pool);
+
+  const db = drizzle(pool);
   await migrate(db, { migrationsFolder: './libs/database/migrations' });
   console.log('[migrate] done');
 
