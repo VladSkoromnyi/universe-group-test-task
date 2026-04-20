@@ -1,6 +1,9 @@
 # OS
 .DS_Store
 Thumbs.db
+# macOS iCloud / Finder duplicates like "file 2.ts"
+* 2.*
+* 3.*
 
 # IDE
 .idea/
