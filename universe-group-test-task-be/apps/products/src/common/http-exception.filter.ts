@@ -24,9 +24,18 @@ export class AllExceptionsFilter implements ExceptionFilter {
       : { message: 'Internal server error' };
 
     if (!isHttp) {
+      const details =
+        exception instanceof Error
+          ? {
+              name: exception.name,
+              message: exception.message,
+              cause: (exception as Error & { cause?: unknown }).cause,
+              stack: exception.stack,
+            }
+          : String(exception);
       this.logger.error(
         `Unhandled error at ${request.method} ${request.url}`,
-        exception instanceof Error ? exception.stack : String(exception),
+        details,
       );
     }
 
