@@ -24,7 +24,13 @@ type Options = Omit<RequestInit, "body"> & {
  */
 export async function apiFetch<T>(path: string, options: Options = {}): Promise<T> {
   const { body, headers, next, ...rest } = options;
-  const url = `${env.apiUrl.replace(/\/$/, "")}${path}`;
+  // Pick the right base URL for the runtime:
+  //   - On the server (SSR / route handlers) use the internal DNS name so we
+  //     reach other containers on the Docker network.
+  //   - In the browser use the public URL that's reachable from the user's
+  //     machine.
+  const baseUrl = typeof window === "undefined" ? env.internalApiUrl : env.apiUrl;
+  const url = `${baseUrl.replace(/\/$/, "")}${path}`;
 
   const res = await fetch(url, {
     ...rest,

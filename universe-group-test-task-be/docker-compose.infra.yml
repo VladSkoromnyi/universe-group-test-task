@@ -1,3 +1,14 @@
+# Infra-only compose: postgres + rabbitmq.
+#
+# Use this when you want to run the Nest apps natively on the host
+# (`npm run start:products` / `npm run start:notifications`) but still need
+# the database and message broker in containers.
+#
+# For the full containerised stack (including BE apps + FE), use the
+# composes at the repo root:
+#   docker compose up                                  # prod
+#   docker compose -f docker-compose.dev.yml up        # dev (hot reload)
+
 services:
   postgres:
     image: postgres:16-alpine
