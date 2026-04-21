@@ -10,4 +10,9 @@ export const queryKeys = {
     list: (page: number, limit: number) =>
       [...queryKeys.products.all, "list", { page, limit }] as const,
   },
+  notifications: {
+    all: ["notifications"] as const,
+    list: (page: number, limit: number) =>
+      [...queryKeys.notifications.all, "list", { page, limit }] as const,
+  },
 } as const;

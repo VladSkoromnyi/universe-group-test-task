@@ -25,6 +25,8 @@ FROM deps AS builder
 # NEXT_PUBLIC_* must be present at build time; anything else is read at runtime.
 ARG NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+ARG NEXT_PUBLIC_NOTIFICATIONS_API_URL
+ENV NEXT_PUBLIC_NOTIFICATIONS_API_URL=${NEXT_PUBLIC_NOTIFICATIONS_API_URL}
 COPY tsconfig.json next.config.ts postcss.config.mjs components.json eslint.config.mjs ./
 COPY public ./public
 COPY src ./src
