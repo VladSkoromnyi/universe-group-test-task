@@ -15,7 +15,8 @@ export const RABBITMQ_CLIENT = 'RABBITMQ_CLIENT';
           transport: Transport.RMQ,
           options: {
             urls: [configService.getOrThrow<string>('RABBITMQ_URL')],
-            queue: configService.get<string>('RABBITMQ_QUEUE') ?? 'products_queue',
+            queue:
+              configService.get<string>('RABBITMQ_QUEUE') ?? 'products_queue',
             queueOptions: { durable: true },
           },
         }),
