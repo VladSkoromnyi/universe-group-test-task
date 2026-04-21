@@ -1,0 +1,133 @@
+#!/usr/bin/env bash
+#
+# Pre-push validation: blocks pushes that don't meet our quality bar.
+#
+#   1. Every new commit being pushed must use Conventional Commits format
+#      (or be a merge commit, which git writes verbatim).
+#   2. Lint must pass in both sub-packages (BE + FE).
+#
+# Enable once per clone:
+#     git config core.hooksPath .githooks
+#   or run `bin/setup-hooks.sh` from the repo root.
+#
+# Emergency bypass (don't use unless you mean it):
+#     git push --no-verify
+#
+# Git invokes this hook with `<local_ref> <local_sha> <remote_ref> <remote_sha>`
+# lines on stdin, once per branch being pushed.
+
+set -euo pipefail
+
+RED=$'\033[0;31m'
+GREEN=$'\033[0;32m'
+YELLOW=$'\033[0;33m'
+RESET=$'\033[0m'
+
+fail() {
+  printf "%s[pre-push] %s%s\n" "$RED" "$1" "$RESET" >&2
+  exit 1
+}
+
+info() {
+  printf "%s[pre-push] %s%s\n" "$YELLOW" "$1" "$RESET"
+}
+
+ok() {
+  printf "%s[pre-push] %s%s\n" "$GREEN" "$1" "$RESET"
+}
+
+# ─── Conventional Commits regex ──────────────────────────────────────────────
+# Accepted first lines:
+#   feat(scope): message
+#   fix: message
+#   docs(scope)!: breaking change message
+#   chore: message
+#   merge: <anything>        (our own merge-style commits)
+#   Merge ...                (git's default merge commit message)
+#   Revert ...               (git revert's default message)
+CC_REGEX='^(feat|fix|docs|style|refactor|perf|test|chore|ci|build)(\([a-zA-Z0-9/_.-]+\))?!?: .+'
+MERGE_REGEX='^(merge:|Merge |Revert )'
+
+# ─── Read push plan from stdin ───────────────────────────────────────────────
+# Collect every commit that's about to land on the remote. We skip deletions
+# (remote ref being removed) and brand-new branches without a remote history
+# get their full log compared against the default branch's tip.
+ZERO="0000000000000000000000000000000000000000"
+COMMITS_TO_CHECK=()
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+  # Branch deletion — nothing to validate.
+  if [ "$local_sha" = "$ZERO" ]; then
+    continue
+  fi
+
+  if [ "$remote_sha" = "$ZERO" ]; then
+    # New branch on the remote. Compare against whatever the remote's default
+    # branch points at (falling back to `prod` which is our release branch).
+    if git rev-parse --verify --quiet refs/remotes/origin/prod >/dev/null; then
+      range="refs/remotes/origin/prod..$local_sha"
+    elif git rev-parse --verify --quiet refs/remotes/origin/develop >/dev/null; then
+      range="refs/remotes/origin/develop..$local_sha"
+    else
+      # First push ever — no remote to diff against, validate the whole history.
+      range="$local_sha"
+    fi
+  else
+    range="$remote_sha..$local_sha"
+  fi
+
+  while IFS= read -r sha; do
+    [ -n "$sha" ] && COMMITS_TO_CHECK+=("$sha")
+  done < <(git rev-list "$range")
+done
+
+# De-dupe (portable — avoids bash 4+ readarray which is missing on stock macOS)
+if [ ${#COMMITS_TO_CHECK[@]} -gt 0 ]; then
+  DEDUPED=()
+  while IFS= read -r line; do
+    [ -n "$line" ] && DEDUPED+=("$line")
+  done < <(printf '%s\n' "${COMMITS_TO_CHECK[@]}" | awk '!seen[$0]++')
+  COMMITS_TO_CHECK=("${DEDUPED[@]}")
+fi
+
+# ─── Validate commit messages ────────────────────────────────────────────────
+info "checking ${#COMMITS_TO_CHECK[@]} commit(s) for Conventional Commits format"
+
+BAD_COMMITS=()
+for sha in "${COMMITS_TO_CHECK[@]}"; do
+  subject=$(git log -1 --format='%s' "$sha")
+  if [[ "$subject" =~ $CC_REGEX ]] || [[ "$subject" =~ $MERGE_REGEX ]]; then
+    continue
+  fi
+  BAD_COMMITS+=("${sha:0:12}  $subject")
+done
+
+if [ ${#BAD_COMMITS[@]} -gt 0 ]; then
+  printf "%s[pre-push] commit messages don't match Conventional Commits:%s\n" "$RED" "$RESET" >&2
+  for line in "${BAD_COMMITS[@]}"; do
+    printf "  %s\n" "$line" >&2
+  done
+  printf "\nExpected: type(scope?): subject   — where type is one of:\n  feat, fix, docs, style, refactor, perf, test, chore, ci, build\n" >&2
+  printf "Examples:\n  feat(be/products): add price index\n  fix: handle null payload in consumer\n  docs: update root README\n" >&2
+  exit 1
+fi
+ok "commit messages look good"
+
+# ─── Run lint in both sub-packages ───────────────────────────────────────────
+# Always run both — the push might land on a branch that affects both, and
+# it's not worth the complexity to parse the diff here. Takes a few seconds.
+ROOT_DIR="$(git rev-parse --show-toplevel)"
+
+run_lint() {
+  local pkg="$1"
+  info "running lint in $pkg"
+  if ! (cd "$ROOT_DIR/$pkg" && npm run --silent lint); then
+    fail "lint failed in $pkg — fix errors and try again"
+  fi
+  ok "$pkg lint passed"
+}
+
+run_lint "universe-group-test-task-be"
+run_lint "universe-group-test-task-fe"
+
+ok "all pre-push checks passed — pushing"

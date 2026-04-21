@@ -90,3 +90,22 @@ Details → [backend README](./universe-group-test-task-be/README.md) ·
 - `dev/<feature-name>` — feature branches, merged into `develop` via `merge --no-ff`
 
 Flow: `dev/feature` → `develop` → `stage` → `prod`.
+
+### Enable git hooks (one-time per clone)
+
+```bash
+bin/setup-hooks.sh
+```
+
+That points git at `.githooks/` (tracked in this repo) instead of the
+default `.git/hooks/`. The `pre-push` hook then runs on every
+`git push`:
+
+1. **Commit message validation** — every new commit being pushed must
+   match Conventional Commits format: `type(scope?): subject`. Valid
+   types: `feat, fix, docs, style, refactor, perf, test, chore, ci,
+   build`. Merge / revert commits are allowlisted.
+2. **Lint** — `npm run lint` in both `universe-group-test-task-be` and
+   `universe-group-test-task-fe`. Either non-zero → push is aborted.
+
+Emergency bypass: `git push --no-verify` (don't).
