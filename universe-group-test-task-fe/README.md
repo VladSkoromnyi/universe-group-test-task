@@ -79,9 +79,21 @@ templates are committed.
 
 | Variable | Example | Description |
 |---|---|---|
-| `NEXT_PUBLIC_API_URL` | `http://localhost:3001` | Base URL of the Products API. Must be prefixed with `NEXT_PUBLIC_` so it's inlined into the browser bundle. Validated at module load via `src/lib/env.ts` — missing value throws immediately. |
+| `NEXT_PUBLIC_API_URL` | `http://localhost:3001` | Browser-facing base URL of the Products API. Must be prefixed with `NEXT_PUBLIC_` so it's inlined into the browser bundle at build time. Validated at module load via `src/lib/env.ts` — missing value throws immediately. |
+| `INTERNAL_API_URL` | `http://products:3001` | Optional. Used only by server-side fetchers (SSR prefetch, route handlers) when the server runtime lives on a different network from the browser (Docker Compose). Falls back to `NEXT_PUBLIC_API_URL` if unset — correct for local `npm run dev`. |
 
-## Quick start
+## Quick start — full Docker stack
+
+```bash
+# From the repo root:
+cp .env.docker.example .env
+docker compose up --build                              # prod (standalone build)
+docker compose -f docker-compose.dev.yml up --build    # dev, with HMR
+```
+
+See the [root README](../README.md) for the full URL map.
+
+## Quick start — native
 
 ```bash
 # 1. Install
@@ -91,8 +103,8 @@ npm install
 cp .env.example .env.development
 # NEXT_PUBLIC_API_URL=http://localhost:3001 (already the default)
 
-# 3. Make sure the backend is running
-#    cd ../universe-group-test-task-be && npm run docker:up && npm run start:products
+# 3. Make sure the backend is running (native flow — infra in Docker, apps on host)
+#    cd ../universe-group-test-task-be && npm run docker:up && npm run db:migrate && npm run start:products
 
 # 4. Dev server
 npm run dev                 # http://localhost:3000
@@ -107,6 +119,25 @@ npm run dev                 # http://localhost:3000
 | `npm start` | Serve the production build |
 | `npm run lint` | ESLint |
 | `npm run typecheck` | `tsc --noEmit` — strict TypeScript check |
+
+## Docker image
+
+Single `Dockerfile`, two build targets:
+
+| Target | Purpose |
+|---|---|
+| `prod` | Next.js standalone build (`output: "standalone"` in `next.config.ts`). Final image is ~150MB — just the server bundle and a pruned `node_modules`. |
+| `dev` | Ships only the dependencies; compose bind-mounts the source and the container runs `next dev` with HMR. |
+
+`NEXT_PUBLIC_API_URL` must be supplied at **build time** (prod target) because
+Next.js inlines public env vars into the browser bundle. `INTERNAL_API_URL`
+is read at **runtime** and selected by `src/lib/api/client.ts` when
+`typeof window === "undefined"` — so server-side fetchers hit the `products`
+container directly over the docker network, while the browser keeps using
+the localhost URL.
+
+Consumed by `docker-compose.yml` (prod) and `docker-compose.dev.yml` (dev)
+at the repo root.
 
 ## Design decisions
 

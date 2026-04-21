@@ -1,0 +1,127 @@
+# Full production stack — everything the app needs on one network.
+#
+# Usage:
+#   cp .env.docker.example .env
+#   docker compose up --build
+#
+# Services bind to 0.0.0.0 inside the container and are published on the host
+# via `ports:`. That means `localhost:3000` works on the dev machine AND the
+# host's LAN IP works from other devices on the same network.
+#
+# Dependency order (enforced by healthchecks + service_completed_successfully):
+#   postgres + rabbitmq  →  migrate (one-shot)  →  products + notifications  →  frontend
+
+name: universe-group-prod
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "${POSTGRES_HOST_PORT:-5433}:5432"
+    volumes:
+      - postgres-prod-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    ports:
+      - "${RABBITMQ_HOST_PORT:-5672}:5672"        # AMQP
+      - "${RABBITMQ_UI_HOST_PORT:-15672}:15672"   # Management UI
+    volumes:
+      - rabbitmq-prod-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # One-shot migrator. Blocks the app containers until schema is up to date.
+  migrate:
+    build:
+      context: ./universe-group-test-task-be
+      target: migrate
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  products:
+    build:
+      context: ./universe-group-test-task-be
+      target: prod
+      args:
+        APP: products
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PRODUCTS_PORT: 3001
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672
+      RABBITMQ_QUEUE: ${RABBITMQ_QUEUE}
+      LOG_LEVEL: ${LOG_LEVEL:-log}
+    ports:
+      - "${PRODUCTS_HOST_PORT:-3001}:3001"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  notifications:
+    build:
+      context: ./universe-group-test-task-be
+      target: prod
+      args:
+        APP: notifications
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      NOTIFICATIONS_PORT: 3002
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672
+      RABBITMQ_QUEUE: ${RABBITMQ_QUEUE}
+      LOG_LEVEL: ${LOG_LEVEL:-log}
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  frontend:
+    build:
+      context: ./universe-group-test-task-fe
+      target: prod
+      args:
+        # Inlined into the browser bundle at build time, so it must be the
+        # URL the browser (on the user's machine) will use to reach products.
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+    restart: unless-stopped
+    environment:
+      # Read at runtime — lets SSR fetchers hit the products container
+      # directly on the docker network without a round trip via the host.
+      INTERNAL_API_URL: http://products:3001
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+    ports:
+      - "${FRONTEND_HOST_PORT:-3000}:3000"
+    depends_on:
+      - products
+
+volumes:
+  postgres-prod-data:
+  rabbitmq-prod-data:
