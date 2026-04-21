@@ -51,7 +51,10 @@ describe('ProductsService', () => {
       providers: [
         ProductsService,
         { provide: DRIZZLE, useValue: db },
-        { provide: RABBITMQ_CLIENT, useValue: rmqClient as unknown as ClientProxy },
+        {
+          provide: RABBITMQ_CLIENT,
+          useValue: rmqClient as unknown as ClientProxy,
+        },
       ],
     }).compile();
 
@@ -69,7 +72,11 @@ describe('ProductsService', () => {
     };
     insertChain.returning.mockResolvedValue([row]);
 
-    const result = await service.create({ name: 'A', description: 'd', price: 10 });
+    const result = await service.create({
+      name: 'A',
+      description: 'd',
+      price: 10,
+    });
 
     expect(result).toEqual(row);
     expect(insertChain.values).toHaveBeenCalledWith({
@@ -100,7 +107,9 @@ describe('ProductsService', () => {
 
   it('remove → throws NotFoundException when no row deleted', async () => {
     deleteChain.returning.mockResolvedValue([]);
-    await expect(service.remove('missing')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.remove('missing')).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
     expect(rmqClient.emit).not.toHaveBeenCalled();
   });
 });

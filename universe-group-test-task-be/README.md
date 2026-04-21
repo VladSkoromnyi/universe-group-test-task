@@ -163,7 +163,8 @@ Errors — unified shape via the global `AllExceptionsFilter`:
 | `npm run db:generate` | Generate a new migration from changes in `libs/database/src/schema.ts` |
 | `npm run db:studio` | Drizzle Studio (web UI for the DB) |
 | `npm run docker:up` / `:down` / `:logs` | Manage infra (postgres + rabbitmq) via `docker-compose.infra.yml` |
-| `npm run lint` | ESLint auto-fix |
+| `npm run lint` | ESLint check (read-only, used by the pre-push hook) |
+| `npm run lint:fix` | ESLint with auto-fix |
 | `npm run format` | Prettier |
 
 ## Deploying to stage / production
