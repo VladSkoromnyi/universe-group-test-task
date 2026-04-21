@@ -1,48 +1,50 @@
-import { Injectable, Inject, NotFoundException } from '@nestjs/common';
+import { Injectable, Inject, NotFoundException, Logger } from '@nestjs/common';
 import { ClientProxy } from '@nestjs/microservices';
 import { eq, desc, count } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import { firstValueFrom } from 'rxjs';
-import { DRIZZLE } from '../../../libs/database/src/database.module';
-import { products } from '../../../libs/database/src/schema';
-import { RABBITMQ_CLIENT, PRODUCT_EVENTS } from '../../../libs/rabbitmq/src';
+import { DRIZZLE, products, type Product } from '@libs/database';
+import * as schema from '@libs/database/schema';
+import {
+  RABBITMQ_CLIENT,
+  PRODUCT_EVENTS,
+  type ProductEvent,
+} from '@libs/rabbitmq';
 import { CreateProductDto, PaginationDto } from './dto/product.dto';
-import * as schema from '../../../libs/database/src/schema';
 
 @Injectable()
 export class ProductsService {
+  private readonly logger = new Logger(ProductsService.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: NodePgDatabase<typeof schema>,
     @Inject(RABBITMQ_CLIENT) private readonly rmqClient: ClientProxy,
   ) {}
 
-  async create(dto: CreateProductDto) {
+  async create(dto: CreateProductDto): Promise<Product> {
     const [product] = await this.db
       .insert(products)
       .values({
         name: dto.name,
         description: dto.description,
-        price: dto.price.toString(),
+        price: dto.price.toFixed(2),
       })
       .returning();
 
-    await firstValueFrom(
-      this.rmqClient.emit(PRODUCT_EVENTS.CREATED, {
-        event: PRODUCT_EVENTS.CREATED,
-        payload: {
-          id: product.id,
-          name: product.name,
-          description: product.description,
-          price: product.price,
-          timestamp: new Date().toISOString(),
-        },
-      }),
-    );
+    this.publish({
+      event: PRODUCT_EVENTS.CREATED,
+      payload: {
+        id: product.id,
+        name: product.name,
+        description: product.description,
+        price: product.price,
+        timestamp: new Date().toISOString(),
+      },
+    });
 
     return product;
   }
 
-  async remove(id: string) {
+  async remove(id: string): Promise<Product> {
     const [deleted] = await this.db
       .delete(products)
       .where(eq(products.id, id))
@@ -52,15 +54,13 @@ export class ProductsService {
       throw new NotFoundException(`Product with id ${id} not found`);
     }
 
-    await firstValueFrom(
-      this.rmqClient.emit(PRODUCT_EVENTS.DELETED, {
-        event: PRODUCT_EVENTS.DELETED,
-        payload: {
-          id: deleted.id,
-          timestamp: new Date().toISOString(),
-        },
-      }),
-    );
+    this.publish({
+      event: PRODUCT_EVENTS.DELETED,
+      payload: {
+        id: deleted.id,
+        timestamp: new Date().toISOString(),
+      },
+    });
 
     return deleted;
   }
@@ -88,5 +88,20 @@ export class ProductsService {
         totalPages: Math.ceil(Number(total) / limit),
       },
     };
+  }
+
+  /**
+   * Fire-and-forget publish. We intentionally do NOT await the broker ack —
+   * if RabbitMQ is temporarily unavailable, the HTTP request still succeeds
+   * (the DB write is the source of truth). Failures are logged for observability.
+   */
+  private publish(message: ProductEvent): void {
+    this.rmqClient.emit(message.event, message).subscribe({
+      error: (err) => {
+        this.logger.error(
+          `Failed to publish ${message.event} for id=${message.payload.id}: ${err?.message ?? err}`,
+        );
+      },
+    });
   }
 }

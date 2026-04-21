@@ -1,73 +1,198 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="200" alt="Nest Logo" /></a>
-</p>
+# Backend — Products & Notifications
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+Two NestJS microservices communicating via RabbitMQ:
+- **Products** — HTTP API (CRUD + pagination), publishes events to the broker
+- **Notifications** — RMQ consumer, logs incoming events
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://coveralls.io/github/nestjs/nest?branch=master" target="_blank"><img src="https://coveralls.io/repos/github/nestjs/nest/badge.svg?branch=master#9" alt="Coverage" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## Stack
 
-## Description
+- **Node.js 18+**, **TypeScript 5**, **NestJS 10**
+- **PostgreSQL 16** + **Drizzle ORM** (migrations via `drizzle-kit`)
+- **RabbitMQ 3** (amqplib + `@nestjs/microservices`)
+- **Joi** — env variable validation
+- **class-validator** — DTO validation
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+## Architecture
 
-## Installation
-
-```bash
-$ npm install
+```
+┌─────────────────┐         HTTP           ┌──────────────────┐
+│   Client (FE)   │ ───────────────────►   │   Products API   │
+└─────────────────┘                        │      :3001       │
+                                           └────────┬─────────┘
+                                                    │ emit(event, payload)
+                                                    ▼
+                                           ┌──────────────────┐
+                                           │  RabbitMQ queue  │
+                                           │ "products_queue" │
+                                           └────────┬─────────┘
+                                                    │ consume + ack
+                                                    ▼
+                                           ┌──────────────────┐
+                                           │  Notifications   │
+                                           │  (microservice)  │
+                                           └──────────────────┘
 ```
 
-## Running the app
+Events:
+- `product.created` — after a successful INSERT
+- `product.deleted` — after a successful DELETE
 
-```bash
-# development
-$ npm run start
+## Project layout
 
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+```
+universe-group-test-task-be/
+├── apps/
+│   ├── products/               # HTTP API
+│   │   └── src/
+│   │       ├── common/         # exception filter
+│   │       ├── dto/            # class-validator DTOs
+│   │       ├── products.{controller,service,module}.ts
+│   │       └── main.ts
+│   └── notifications/          # RMQ microservice
+│       └── src/
+│           ├── notifications.{controller,service,module}.ts
+│           └── main.ts
+├── libs/
+│   ├── config/                 # AppConfigModule (Joi validation)
+│   ├── database/               # Drizzle client + schema + migrations
+│   │   ├── src/
+│   │   └── migrations/         # generated SQL + drizzle meta
+│   └── rabbitmq/               # shared RMQ client + constants
+├── scripts/
+│   └── migrate.ts              # DB migration runner (waits for DB readiness)
+├── docker-compose.yml          # Postgres + RabbitMQ for local dev
+├── drizzle.config.ts
+├── nest-cli.json               # monorepo (2 apps + 3 libs)
+└── package.json
 ```
 
-## Test
+## Environment variables
+
+Loading priority (top first):
+1. `.env.<NODE_ENV>.local` — local overrides for a specific env (gitignored)
+2. `.env.local` — local overrides, shared (gitignored)
+3. `.env.<NODE_ENV>` — defaults for the environment
+4. `.env` — shared defaults
+
+Templates committed to the repo:
+- `.env.example` — generic
+- `.env.stage.example` → copy to `.env.stage` on the stage host
+- `.env.production.example` → copy to `.env.production` on the prod host
+
+The `.env.development` file is **gitignored** — create it locally from `.env.example`.
+
+| Variable | Example | Description |
+|---|---|---|
+| `NODE_ENV` | `development` \| `stage` \| `production` | Validated by Joi |
+| `DATABASE_URL` | `postgresql://postgres:postgres@localhost:5433/products_db` | Postgres connection string |
+| `RABBITMQ_URL` | `amqp://guest:guest@localhost:5672` | AMQP URL |
+| `RABBITMQ_QUEUE` | `products_queue` | Shared queue for publisher + consumer |
+| `PRODUCTS_PORT` | `3001` | Products HTTP port |
+| `NOTIFICATIONS_PORT` | `3002` | Reserved |
+| `LOG_LEVEL` | `log` \| `debug` \| `warn` \| `error` | Nest Logger level |
+
+## Quick start (local)
+
+> **Prereq:** Node.js 18+, Docker Desktop, `jq` (optional, for curl tests)
 
 ```bash
-# unit tests
-$ npm run test
+# 1. Install dependencies
+npm install
 
-# e2e tests
-$ npm run test:e2e
+# 2. Local env
+cp .env.example .env.development
+# (adjust DATABASE_URL if needed — docker-compose maps Postgres to host port 5433)
 
-# test coverage
-$ npm run test:cov
+# 3. Infrastructure (Postgres on 5433, RabbitMQ on 5672 / UI on 15672)
+npm run docker:up
+
+# 4. Migrations
+npm run db:migrate
+
+# 5. Services — in TWO terminals
+npm run start:products         # :3001 — HTTP API
+npm run start:notifications    # RMQ consumer
+
+# 6. Smoke test — in a third terminal
+curl -s -X POST http://localhost:3001/products \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Demo","description":"hello","price":9.99}' | jq
+# → Products responds 201 + product object
+# → Notifications logs "📦 Product CREATED: id=..."
 ```
 
-## Support
+## API
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+| Method | Path | Body / Query | Response |
+|---|---|---|---|
+| `POST` | `/products` | `{ name: string, description: string, price: number }` | `201` + Product |
+| `DELETE` | `/products/:id` | `id: uuid` | `200` + deleted Product / `404` |
+| `GET` | `/products` | `?page=1&limit=10` | `200` + `{ data: Product[], meta: { total, page, limit, totalPages } }` |
 
-## Stay in touch
+Validation: DTOs via `class-validator`; `forbidNonWhitelisted: true` — unknown fields → 400.
 
-- Author - [Kamil Myśliwiec](https://kamilmysliwiec.com)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+Errors — unified shape via the global `AllExceptionsFilter`:
+```json
+{ "statusCode": 404, "path": "/products/...", "timestamp": "2026-...", "message": "...", "error": "Not Found" }
+```
 
-## License
+## npm scripts
 
-Nest is [MIT licensed](LICENSE).
+| Command | What it does |
+|---|---|
+| `npm run start:products` | Products in watch mode (NODE_ENV=development) |
+| `npm run start:notifications` | Notifications in watch mode |
+| `npm run start:products:stage` / `:prod` | Run from dist/ with NODE_ENV=stage/production |
+| `npm run build` | Build both services into `dist/apps/{products,notifications}` |
+| `npm run db:migrate` | Apply Drizzle migrations (with DB-readiness retry) |
+| `npm run db:generate` | Generate a new migration from changes in `libs/database/src/schema.ts` |
+| `npm run db:studio` | Drizzle Studio (web UI for the DB) |
+| `npm run docker:up` / `:down` / `:logs` | Manage local infrastructure |
+| `npm run lint` | ESLint auto-fix |
+| `npm run format` | Prettier |
+
+## Deploying to stage / production
+
+1. Copy `.env.<env>.example` → `.env.<env>` on the target host and fill in real credentials
+2. On the host: `npm ci && npm run build && npm run db:migrate`
+3. Start:
+   ```bash
+   NODE_ENV=production npm run start:products:prod
+   NODE_ENV=production npm run start:notifications:prod
+   ```
+   (via systemd / pm2 / Docker — your choice)
+
+## Design decisions
+
+### Fire-and-forget publisher
+Products publishes an event **after** a successful INSERT/DELETE through
+`rmqClient.emit().subscribe({ error: log })`. If RabbitMQ is unavailable,
+the HTTP request still responds 201/200 (the DB is the source of truth).
+We trade possible message loss for avoiding 5xx to the client.
+
+For strict guarantees in production — use the **outbox pattern** (write the
+event in the same transaction, then a separate relay worker ships it).
+
+### Manual ack/nack in Notifications
+`noAck: false` + explicit `channel.ack(msg)` on success.
+A non-recoverable error (invalid payload) → `nack(requeue=false)` — avoids
+infinite loops.
+
+### Multi-env config
+A single `AppConfigModule` in `libs/config` with Joi validation — fail fast
+on bad env. Both services import it.
+
+### Drizzle + scripts/migrate.ts
+Custom runner instead of `drizzle-kit migrate` — retries the DB connection
+(up to 15s) to avoid the race where `pg_isready` reports OK before
+`POSTGRES_DB` has been created.
+
+## Troubleshooting
+
+- **`database "products_db" does not exist`** — Postgres hasn't created the DB
+  yet. Check `docker logs ugt_postgres | grep "ready"` and rerun `db:migrate`.
+- **`connection refused` on 5432** — you have a native Postgres running.
+  docker-compose maps to `5433` — make sure `DATABASE_URL=...localhost:5433/...`.
+- **Notifications logs nothing** — check `docker logs ugt_rabbitmq` and verify
+  both services share the same `RABBITMQ_QUEUE`. Management UI:
+  http://localhost:15672 (guest/guest).
