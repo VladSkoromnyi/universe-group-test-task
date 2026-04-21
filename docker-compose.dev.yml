@@ -110,6 +110,8 @@ services:
       RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672
       RABBITMQ_QUEUE: ${RABBITMQ_QUEUE}
       LOG_LEVEL: ${LOG_LEVEL:-log}
+    ports:
+      - "${NOTIFICATIONS_HOST_PORT:-3002}:3002"
     volumes:
       - ./universe-group-test-task-be:/app
       - /app/node_modules
@@ -126,10 +128,12 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: development
-      # Server-side fetchers hit the products container directly.
+      # Server-side fetchers hit the app containers directly.
       INTERNAL_API_URL: http://products:3001
-      # Browser-facing URL — still localhost because ports are published.
+      INTERNAL_NOTIFICATIONS_API_URL: http://notifications:3002
+      # Browser-facing URLs — still localhost because ports are published.
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+      NEXT_PUBLIC_NOTIFICATIONS_API_URL: ${NEXT_PUBLIC_NOTIFICATIONS_API_URL}
     ports:
       - "${FRONTEND_HOST_PORT:-3000}:3000"
     volumes:
@@ -140,6 +144,7 @@ services:
       - /app/.next
     depends_on:
       - products
+      - notifications
 
 volumes:
   postgres-dev-data:

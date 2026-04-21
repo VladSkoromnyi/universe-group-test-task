@@ -97,6 +97,8 @@ services:
       RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672
       RABBITMQ_QUEUE: ${RABBITMQ_QUEUE}
       LOG_LEVEL: ${LOG_LEVEL:-log}
+    ports:
+      - "${NOTIFICATIONS_HOST_PORT:-3002}:3002"
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -111,16 +113,20 @@ services:
         # Inlined into the browser bundle at build time, so it must be the
         # URL the browser (on the user's machine) will use to reach products.
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+        NEXT_PUBLIC_NOTIFICATIONS_API_URL: ${NEXT_PUBLIC_NOTIFICATIONS_API_URL}
     restart: unless-stopped
     environment:
-      # Read at runtime — lets SSR fetchers hit the products container
+      # Read at runtime — lets SSR fetchers hit the app containers
       # directly on the docker network without a round trip via the host.
       INTERNAL_API_URL: http://products:3001
+      INTERNAL_NOTIFICATIONS_API_URL: http://notifications:3002
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+      NEXT_PUBLIC_NOTIFICATIONS_API_URL: ${NEXT_PUBLIC_NOTIFICATIONS_API_URL}
     ports:
       - "${FRONTEND_HOST_PORT:-3000}:3000"
     depends_on:
       - products
+      - notifications
 
 volumes:
   postgres-prod-data:
