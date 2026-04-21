@@ -1,0 +1,146 @@
+# Dev stack — source bind-mounted, hot reload on both sides.
+#
+# Usage:
+#   cp .env.docker.example .env   # (shared with the prod compose)
+#   docker compose -f docker-compose.dev.yml up --build
+#
+# Isolation from the prod compose:
+#   - project name (`universe-group-dev`) keeps containers/networks separate
+#   - volumes (`postgres-dev-data`, `rabbitmq-dev-data`) keep DB state separate
+#   - same host ports — don't run both composes at once, pick one per session
+#
+# Hot reload pattern:
+#   - host project dir is bind-mounted into the container
+#   - container's own `node_modules` lives on an anonymous volume so the
+#     host node_modules (which may be built for a different OS) doesn't leak in
+#   - inside the container: `nest start --watch` (BE) and `next dev` (FE)
+
+name: universe-group-dev
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "${POSTGRES_HOST_PORT:-5433}:5432"
+    volumes:
+      - postgres-dev-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    ports:
+      - "${RABBITMQ_HOST_PORT:-5672}:5672"
+      - "${RABBITMQ_UI_HOST_PORT:-15672}:15672"
+    volumes:
+      - rabbitmq-dev-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    build:
+      context: ./universe-group-test-task-be
+      target: migrate
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  products:
+    build:
+      context: ./universe-group-test-task-be
+      target: dev
+      args:
+        APP: products
+    restart: unless-stopped
+    environment:
+      NODE_ENV: development
+      APP: products
+      PRODUCTS_PORT: 3001
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672
+      RABBITMQ_QUEUE: ${RABBITMQ_QUEUE}
+      LOG_LEVEL: ${LOG_LEVEL:-log}
+    ports:
+      - "${PRODUCTS_HOST_PORT:-3001}:3001"
+    volumes:
+      # Bind-mount source so edits on the host trigger nest --watch inside.
+      - ./universe-group-test-task-be:/app
+      # Anonymous volume keeps the container's own node_modules — otherwise
+      # the bind mount above would hide the install we did at build time.
+      # Anonymous (not named) so each BE service gets its own copy and they
+      # don't race to populate a shared volume on first start.
+      - /app/node_modules
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  notifications:
+    build:
+      context: ./universe-group-test-task-be
+      target: dev
+      args:
+        APP: notifications
+    restart: unless-stopped
+    environment:
+      NODE_ENV: development
+      APP: notifications
+      NOTIFICATIONS_PORT: 3002
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672
+      RABBITMQ_QUEUE: ${RABBITMQ_QUEUE}
+      LOG_LEVEL: ${LOG_LEVEL:-log}
+    volumes:
+      - ./universe-group-test-task-be:/app
+      - /app/node_modules
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  frontend:
+    build:
+      context: ./universe-group-test-task-fe
+      target: dev
+    restart: unless-stopped
+    environment:
+      NODE_ENV: development
+      # Server-side fetchers hit the products container directly.
+      INTERNAL_API_URL: http://products:3001
+      # Browser-facing URL — still localhost because ports are published.
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+    ports:
+      - "${FRONTEND_HOST_PORT:-3000}:3000"
+    volumes:
+      - ./universe-group-test-task-fe:/app
+      # Anonymous volumes — container owns its own node_modules and .next
+      # instead of picking them up from the host bind mount.
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      - products
+
+volumes:
+  postgres-dev-data:
+  rabbitmq-dev-data:
