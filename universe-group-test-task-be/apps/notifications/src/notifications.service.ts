@@ -20,9 +20,7 @@ export class NotificationsService {
         break;
 
       default:
-        this.logger.warn(
-          `Unknown event received: ${JSON.stringify(data)}`,
-        );
+        this.logger.warn(`Unknown event received: ${JSON.stringify(data)}`);
     }
   }
 }

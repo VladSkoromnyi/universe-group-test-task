@@ -25,9 +25,13 @@ async function waitForDatabase(pool: Pool): Promise<void> {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       if (attempt === WAIT_MAX_ATTEMPTS) {
-        throw new Error(`Database not reachable after ${WAIT_MAX_ATTEMPTS} attempts: ${msg}`);
+        throw new Error(
+          `Database not reachable after ${WAIT_MAX_ATTEMPTS} attempts: ${msg}`,
+        );
       }
-      console.log(`[migrate] waiting for database (attempt ${attempt}/${WAIT_MAX_ATTEMPTS})...`);
+      console.log(
+        `[migrate] waiting for database (attempt ${attempt}/${WAIT_MAX_ATTEMPTS})...`,
+      );
       await new Promise((r) => setTimeout(r, WAIT_DELAY_MS));
     }
   }
