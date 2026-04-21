@@ -59,7 +59,7 @@ export function ProductsPagination({
               Previous
             </Link>
           ) : (
-            <span>
+            <span className={"flex items-center gap-1"}>
               <ChevronLeftIcon />
               Previous
             </span>
@@ -83,7 +83,7 @@ export function ProductsPagination({
               <ChevronRightIcon />
             </Link>
           ) : (
-            <span>
+            <span className={"flex items-center gap-1"}>
               Next
               <ChevronRightIcon />
             </span>
