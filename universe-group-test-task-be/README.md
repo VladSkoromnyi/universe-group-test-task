@@ -60,7 +60,8 @@ universe-group-test-task-be/
 │   └── rabbitmq/               # shared RMQ client + constants
 ├── scripts/
 │   └── migrate.ts              # DB migration runner (waits for DB readiness)
-├── docker-compose.yml          # Postgres + RabbitMQ for local dev
+├── Dockerfile                  # Prod / migrate / dev build targets
+├── docker-compose.infra.yml    # Postgres + RabbitMQ for native-host dev
 ├── drizzle.config.ts
 ├── nest-cli.json               # monorepo (2 apps + 3 libs)
 └── package.json
@@ -91,7 +92,20 @@ The `.env.development` file is **gitignored** — create it locally from `.env.e
 | `NOTIFICATIONS_PORT` | `3002` | Reserved |
 | `LOG_LEVEL` | `log` \| `debug` \| `warn` \| `error` | Nest Logger level |
 
-## Quick start (local)
+## Quick start — full Docker stack
+
+Everything (including both Nest apps + the FE) runs in containers. From
+the **repo root**, not this directory:
+
+```bash
+cp .env.docker.example .env
+docker compose up --build                              # prod images
+docker compose -f docker-compose.dev.yml up --build    # dev, hot reload
+```
+
+See the [root README](../README.md) for the full URL map.
+
+## Quick start — native (Node on host, infra in Docker)
 
 > **Prereq:** Node.js 18+, Docker Desktop, `jq` (optional, for curl tests)
 
@@ -104,6 +118,7 @@ cp .env.example .env.development
 # (adjust DATABASE_URL if needed — docker-compose maps Postgres to host port 5433)
 
 # 3. Infrastructure (Postgres on 5433, RabbitMQ on 5672 / UI on 15672)
+#    Uses docker-compose.infra.yml — postgres + rabbitmq only.
 npm run docker:up
 
 # 4. Migrations
@@ -147,7 +162,7 @@ Errors — unified shape via the global `AllExceptionsFilter`:
 | `npm run db:migrate` | Apply Drizzle migrations (with DB-readiness retry) |
 | `npm run db:generate` | Generate a new migration from changes in `libs/database/src/schema.ts` |
 | `npm run db:studio` | Drizzle Studio (web UI for the DB) |
-| `npm run docker:up` / `:down` / `:logs` | Manage local infrastructure |
+| `npm run docker:up` / `:down` / `:logs` | Manage infra (postgres + rabbitmq) via `docker-compose.infra.yml` |
 | `npm run lint` | ESLint auto-fix |
 | `npm run format` | Prettier |
 
@@ -161,6 +176,20 @@ Errors — unified shape via the global `AllExceptionsFilter`:
    NODE_ENV=production npm run start:notifications:prod
    ```
    (via systemd / pm2 / Docker — your choice)
+
+## Docker image
+
+Single `Dockerfile`, three build targets — both apps share the same image,
+only the entrypoint differs:
+
+| Target | Purpose |
+|---|---|
+| `prod` | Production bundle. `APP=products` or `APP=notifications` build arg selects the entrypoint. Runs `node dist/apps/$APP/main.js`. |
+| `migrate` | One-shot migration runner (`npm run db:migrate`) — blocks the prod stack until the schema is up to date. |
+| `dev` | Hot-reload dev. Source bind-mounted by the dev compose; runs `nest start $APP --watch`. |
+
+Consumed by `docker-compose.yml` (prod) and `docker-compose.dev.yml` (dev)
+at the repo root.
 
 ## Design decisions
 
