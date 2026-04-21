@@ -2,7 +2,8 @@
 
 Two NestJS microservices communicating via RabbitMQ:
 - **Products** — HTTP API (CRUD + pagination), publishes events to the broker
-- **Notifications** — RMQ consumer, logs incoming events
+- **Notifications** — hybrid app: RMQ consumer (persists events to Postgres +
+  logs) AND HTTP API for listing / deleting persisted notifications
 
 ## Stack
 
@@ -29,9 +30,14 @@ Two NestJS microservices communicating via RabbitMQ:
                                                     ▼
                                            ┌──────────────────┐
                                            │  Notifications   │
-                                           │  (microservice)  │
+                                           │  :3002 (HTTP)    │◄── GET /notifications
+                                           │  + RMQ consumer  │    DELETE /notifications/:id
                                            └──────────────────┘
 ```
+
+Both services read / write the same `products_db` Postgres database. The
+`notifications` table gives the HTTP layer something to list; the RMQ
+consumer writes one row per incoming event.
 
 Events:
 - `product.created` — after a successful INSERT
@@ -89,7 +95,7 @@ The `.env.development` file is **gitignored** — create it locally from `.env.e
 | `RABBITMQ_URL` | `amqp://guest:guest@localhost:5672` | AMQP URL |
 | `RABBITMQ_QUEUE` | `products_queue` | Shared queue for publisher + consumer |
 | `PRODUCTS_PORT` | `3001` | Products HTTP port |
-| `NOTIFICATIONS_PORT` | `3002` | Reserved |
+| `NOTIFICATIONS_PORT` | `3002` | Notifications HTTP port |
 | `LOG_LEVEL` | `log` \| `debug` \| `warn` \| `error` | Nest Logger level |
 
 ## Quick start — full Docker stack
@@ -143,6 +149,8 @@ curl -s -X POST http://localhost:3001/products \
 | `POST` | `/products` | `{ name: string, description: string, price: number }` | `201` + Product |
 | `DELETE` | `/products/:id` | `id: uuid` | `200` + deleted Product / `404` |
 | `GET` | `/products` | `?page=1&limit=10` | `200` + `{ data: Product[], meta: { total, page, limit, totalPages } }` |
+| `GET` | `/notifications` | `?page=1&limit=10` | `200` + `{ data: Notification[], meta: { total, page, limit, totalPages } }` |
+| `DELETE` | `/notifications/:id` | `id: uuid` | `200` + deleted Notification / `404` |
 
 Validation: DTOs via `class-validator`; `forbidNonWhitelisted: true` — unknown fields → 400.
 
