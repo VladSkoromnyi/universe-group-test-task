@@ -3,7 +3,6 @@ import { ConfigService } from '@nestjs/config';
 import { ClientsModule, Transport } from '@nestjs/microservices';
 
 export const RABBITMQ_CLIENT = 'RABBITMQ_CLIENT';
-export const PRODUCTS_QUEUE = 'products_queue';
 
 @Global()
 @Module({
@@ -16,7 +15,7 @@ export const PRODUCTS_QUEUE = 'products_queue';
           transport: Transport.RMQ,
           options: {
             urls: [configService.getOrThrow<string>('RABBITMQ_URL')],
-            queue: PRODUCTS_QUEUE,
+            queue: configService.get<string>('RABBITMQ_QUEUE') ?? 'products_queue',
             queueOptions: { durable: true },
           },
         }),
