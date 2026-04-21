@@ -12,3 +12,16 @@ export function formatPrice(value: string): string {
     maximumFractionDigits: 2,
   }).format(n);
 }
+
+/**
+ * Deterministic placeholder image URL for a product. Using the id as a
+ * seed means the same product always gets the same image across renders
+ * and reloads, which makes the UI feel stable even though the backend
+ * does not yet store images.
+ */
+export function productImageUrl(
+  productId: string,
+  { width = 400, height = 300 }: { width?: number; height?: number } = {},
+): string {
+  return `https://picsum.photos/seed/${encodeURIComponent(productId)}/${width}/${height}`;
+}

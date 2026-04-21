@@ -7,21 +7,19 @@ import { DEFAULT_PAGE_SIZE } from "@/hooks/use-products";
 
 import { CreateProductDialog } from "./_components/create-product-dialog";
 import { ProductsList } from "./_components/products-list";
+import { parsePage, parseView } from "./_components/search-params";
+import { ViewToggle } from "./_components/view-toggle";
 
 type SearchParams = { [key: string]: string | string[] | undefined };
-
-function parsePage(raw: string | string[] | undefined): number {
-  const n = Array.isArray(raw) ? Number(raw[0]) : Number(raw);
-  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 1;
-}
 
 export default async function ProductsPage({
   searchParams,
 }: {
   searchParams: Promise<SearchParams>;
 }) {
-  const { page: pageParam } = await searchParams;
+  const { page: pageParam, view: viewParam } = await searchParams;
   const page = parsePage(pageParam);
+  const view = parseView(viewParam);
   const limit = DEFAULT_PAGE_SIZE;
 
   // Prefetch on the server, hand the dehydrated cache down so the client
@@ -34,7 +32,7 @@ export default async function ProductsPage({
 
   return (
     <div className="mx-auto w-full max-w-5xl px-4 py-10">
-      <header className="mb-6 flex items-end justify-between gap-4">
+      <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">Products</h1>
           <p className="text-muted-foreground mt-2 text-sm">
@@ -42,11 +40,14 @@ export default async function ProductsPage({
             publishes an event to the notifications service via RabbitMQ.
           </p>
         </div>
-        <CreateProductDialog />
+        <div className="flex items-center gap-2">
+          <ViewToggle page={page} view={view} />
+          <CreateProductDialog />
+        </div>
       </header>
 
       <HydrationBoundary state={dehydrate(queryClient)}>
-        <ProductsList page={page} />
+        <ProductsList page={page} view={view} />
       </HydrationBoundary>
     </div>
   );

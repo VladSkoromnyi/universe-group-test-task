@@ -10,6 +10,9 @@ Thumbs.db
 .vscode/
 *.swp
 
+# Claude Code tooling (per-dev launch config, local settings)
+.claude/
+
 # Node
 node_modules/
 npm-debug.log*
