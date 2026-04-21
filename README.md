@@ -9,7 +9,10 @@ Test task: microservices for product management with notifications via a message
   - `Notifications` — RMQ consumer, logs events
   - PostgreSQL + Drizzle ORM (migrations)
   - Multi-env config (dev/stage/prod) with Joi validation
-- **Frontend** (Next.js + shadcn/ui): product list page, create/delete dialogs
+- **Frontend** (Next.js + shadcn/ui): paginated product catalogue with
+  grid / list views, create and delete dialogs, dark theme (default) with
+  Light / Dark / System toggle, SSR prefetch + TanStack Query hydration,
+  URL-driven state (`?page`, `?view`), error & 404 boundaries
 
 ## Layout
 
