@@ -6,13 +6,16 @@ Test task: microservices for product management with notifications via a message
 
 - **Backend** (NestJS monorepo, TypeScript):
   - `Products` — HTTP API: create / delete / paginated list. Publishes events to RabbitMQ
-  - `Notifications` — RMQ consumer, logs events
+  - `Notifications` — hybrid app: RMQ consumer persists each event to Postgres,
+    plus HTTP API (`GET /notifications`, `DELETE /notifications/:id`) backing
+    the notifications page on the frontend
   - PostgreSQL + Drizzle ORM (migrations)
   - Multi-env config (dev/stage/prod) with Joi validation
 - **Frontend** (Next.js + shadcn/ui): paginated product catalogue with
-  grid / list views, create and delete dialogs, dark theme (default) with
-  Light / Dark / System toggle, SSR prefetch + TanStack Query hydration,
-  URL-driven state (`?page`, `?view`), error & 404 boundaries
+  grid / list views, create and delete dialogs, **paginated notifications
+  page** with per-row delete, dark theme (default) with Light / Dark / System
+  toggle, SSR prefetch + TanStack Query hydration, URL-driven state
+  (`?page`, `?view`), error & 404 boundaries
 
 ## Layout
 
@@ -40,6 +43,7 @@ Then open:
 |---|---|
 | http://localhost:3000 | Frontend (Next.js) |
 | http://localhost:3001/products | Products API |
+| http://localhost:3002/notifications | Notifications API |
 | http://localhost:15672 | RabbitMQ management (guest / guest) |
 
 The ports bind on `0.0.0.0`, so the same URLs work from other devices on
